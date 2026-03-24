@@ -13,7 +13,7 @@ from typing import Iterator
 import numpy as np
 
 from .config import KokoroConfig
-from .generate import SAMPLE_RATE, TokenTiming, generate, generate_stream
+from .generate import SAMPLE_RATE, WordTiming, generate, generate_stream
 from .model import KokoroModel
 from .phonemize import Phonemizer
 from .playback import play, play_stream, save_wav
@@ -28,7 +28,7 @@ class TTSResult:
     sample_rate: int
     duration: float
     voice: str
-    tokens: list[TokenTiming]
+    tokens: list[WordTiming]
 
 
 class KokoroTTS:

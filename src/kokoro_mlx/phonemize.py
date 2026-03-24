@@ -50,19 +50,21 @@ class Phonemizer:
         token_ids = self._ids_from_phonemes(phonemes)
         return phonemes, token_ids
 
-    def phonemize_long(self, text: str) -> list[tuple[str, list[int]]]:
+    def phonemize_long(self, text: str) -> list[tuple[str, list[int], list]]:
         """Phonemize *text*, chunking at sentence boundaries when the phoneme
         sequence would exceed the 512-token context window.
 
-        Returns a list of ``(phoneme_string, token_ids)`` tuples, one per
-        chunk.
+        Returns a list of ``(phoneme_string, token_ids, word_tokens)`` tuples,
+        one per chunk.  ``word_tokens`` is the list of ``MToken`` objects from
+        misaki, preserving the word-to-phoneme mapping needed for word-level
+        timestamps.
         """
         if not text or not text.strip():
             return []
 
         # Split into sentences and accumulate until the limit is reached.
         sentences = _SENTENCE_BOUNDARY.split(text.strip())
-        chunks: list[tuple[str, list[int]]] = []
+        chunks: list[tuple[str, list[int], list]] = []
         current_sentences: list[str] = []
 
         for sentence in sentences:
@@ -76,15 +78,15 @@ class Phonemizer:
             if len(vocab_ids) > _MAX_TOKENS and current_sentences:
                 # Flush the current accumulation before adding the new sentence.
                 flush_text = " ".join(current_sentences)
-                ph, _ = self._g2p(flush_text)
-                chunks.append((ph, self._ids_from_phonemes(ph)))
+                ph, word_tokens = self._g2p(flush_text)
+                chunks.append((ph, self._ids_from_phonemes(ph), word_tokens))
                 current_sentences = [sentence]
             else:
                 current_sentences.append(sentence)
 
         if current_sentences:
             flush_text = " ".join(current_sentences)
-            ph, _ = self._g2p(flush_text)
-            chunks.append((ph, self._ids_from_phonemes(ph)))
+            ph, word_tokens = self._g2p(flush_text)
+            chunks.append((ph, self._ids_from_phonemes(ph), word_tokens))
 
         return chunks

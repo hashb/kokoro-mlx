@@ -6,7 +6,7 @@
 __version__ = "0.1.0"
 
 from .config import ISTFTNetConfig, KokoroConfig, PLBertConfig
-from .generate import TokenTiming
+from .generate import WordTiming
 from .kokoro import KokoroTTS, TTSResult
 from .phonemize import Phonemizer
 from .voices import DEFAULT_VOICE, VoiceManager
@@ -18,7 +18,7 @@ __all__ = [
     "KokoroConfig",
     "KokoroTTS",
     "TTSResult",
-    "TokenTiming",
+    "WordTiming",
     "Phonemizer",
     "VoiceManager",
     "DEFAULT_VOICE",

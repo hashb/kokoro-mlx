@@ -19,10 +19,10 @@ SAMPLE_RATE = 24000
 
 
 @dataclass
-class TokenTiming:
-    """Timing information for a single phoneme token."""
+class WordTiming:
+    """Timing information for a single word (or punctuation token)."""
 
-    token: str    # phoneme character
+    word: str     # original word text
     start: float  # start time in seconds
     end: float    # end time in seconds
 
@@ -42,6 +42,38 @@ def _resample_2x(audio: np.ndarray) -> np.ndarray:
     return np.fft.irfft(padded, n=out_len).astype(np.float32) * 2.0
 
 
+def _build_word_timings(
+    word_tokens: list,
+    vocab: dict,
+    pred_dur_np,
+    hop_secs: float,
+    time_offset: float,
+) -> list[WordTiming]:
+    """Build word-level timings from misaki MToken list and predicted durations.
+
+    Each MToken covers a word or punctuation item.  The token's timing spans
+    its own phoneme characters plus any trailing whitespace character(s) that
+    the model assigned frames to.  Tokens whose phonemes contribute no vocab
+    characters (empty or suppressed) are skipped.
+    """
+    # BOS token is at pred_dur_np[0]; speech starts after its frames.
+    t = time_offset + int(pred_dur_np[0]) * hop_secs
+    dur_idx = 1  # advance past BOS
+
+    timings: list[WordTiming] = []
+    for token in word_tokens:
+        token_str = (token.phonemes or "") + token.whitespace
+        n_vocab = sum(1 for c in token_str if c in vocab)
+        if n_vocab == 0:
+            continue
+        start = t
+        for _ in range(n_vocab):
+            t += int(pred_dur_np[dur_idx]) * hop_secs
+            dur_idx += 1
+        timings.append(WordTiming(word=token.text, start=start, end=t))
+    return timings
+
+
 def _seconds_per_frame(config: KokoroConfig) -> float:
     """Duration of one acoustic frame in seconds at native 24 kHz."""
     hop_samples = math.prod(config.istftnet.upsample_rates) * config.istftnet.gen_istft_hop_size
@@ -57,7 +89,7 @@ def generate(
     speed: float = 1.0,
     phonemizer: Phonemizer | None = None,
     sample_rate: int = SAMPLE_RATE,
-) -> tuple[np.ndarray, list[TokenTiming]]:
+) -> tuple[np.ndarray, list[WordTiming]]:
     """Full text-to-audio pipeline.
 
     Args:
@@ -71,8 +103,8 @@ def generate(
         sample_rate: Output sample rate. 24000 (native) or 48000 (2x upsampled).
 
     Returns:
-        Tuple of (audio, tokens) where audio is a float32 numpy array at the
-        requested sample rate and tokens is a list of TokenTiming with per-phoneme
+        Tuple of (audio, timings) where audio is a float32 numpy array at the
+        requested sample rate and timings is a list of WordTiming with per-word
         start/end times in seconds.
     """
     if phonemizer is None:
@@ -86,23 +118,18 @@ def generate(
     hop_secs = _seconds_per_frame(config)
 
     audio_chunks: list[np.ndarray] = []
-    all_timings: list[TokenTiming] = []
+    all_timings: list[WordTiming] = []
     time_offset = 0.0
 
-    for phonemes, token_ids in chunks:
+    for phonemes, token_ids, word_tokens in chunks:
         style = voice_manager.get_style(voice_array, len(token_ids))
         audio, pred_dur_np = model.forward(phonemes, style, speed)
         chunk = np.array(audio.tolist(), dtype=np.float32)
 
-        # Build per-token timestamps (pred_dur_np includes BOS at [0] and EOS at [-1])
-        phoneme_chars = [c for c in phonemes if c in config.vocab]
-        t = time_offset
-        for char, dur in zip(phoneme_chars, pred_dur_np[1:-1]):
-            end = t + int(dur) * hop_secs
-            all_timings.append(TokenTiming(token=char, start=t, end=end))
-            t = end
+        all_timings.extend(
+            _build_word_timings(word_tokens, config.vocab, pred_dur_np, hop_secs, time_offset)
+        )
         time_offset += len(chunk) / SAMPLE_RATE
-
         audio_chunks.append(chunk)
 
     result = np.concatenate(audio_chunks) if audio_chunks else np.array([], dtype=np.float32)
@@ -125,8 +152,8 @@ def generate_stream(
 ):
     """Generate audio in chunks as they are produced.
 
-    Yields (chunk, tokens) tuples — one per phoneme chunk — where chunk is a
-    float32 numpy array and tokens is a list of TokenTiming with per-phoneme
+    Yields (chunk, timings) tuples — one per sentence chunk — where chunk is a
+    float32 numpy array and timings is a list of WordTiming with per-word
     start/end times in seconds.  Suitable for low-latency streaming playback.
 
     Args:
@@ -140,7 +167,7 @@ def generate_stream(
         sample_rate: Output sample rate. 24000 (native) or 48000 (2x upsampled).
 
     Yields:
-        (chunk, tokens) tuples, one per sentence chunk.
+        (chunk, timings) tuples, one per sentence chunk.
     """
     if phonemizer is None:
         phonemizer = Phonemizer(config.vocab)
@@ -154,19 +181,12 @@ def generate_stream(
     upsample = sample_rate == 48000
     time_offset = 0.0
 
-    for phonemes, token_ids in chunks:
+    for phonemes, token_ids, word_tokens in chunks:
         style = voice_manager.get_style(voice_array, len(token_ids))
         audio, pred_dur_np = model.forward(phonemes, style, speed)
         chunk = np.array(audio.tolist(), dtype=np.float32)
 
-        # Build per-token timestamps for this chunk
-        phoneme_chars = [c for c in phonemes if c in config.vocab]
-        timings: list[TokenTiming] = []
-        t = time_offset
-        for char, dur in zip(phoneme_chars, pred_dur_np[1:-1]):
-            end = t + int(dur) * hop_secs
-            timings.append(TokenTiming(token=char, start=t, end=end))
-            t = end
+        timings = _build_word_timings(word_tokens, config.vocab, pred_dur_np, hop_secs, time_offset)
         time_offset += len(chunk) / SAMPLE_RATE
 
         if upsample and len(chunk) > 0:
