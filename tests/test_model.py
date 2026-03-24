@@ -319,16 +319,25 @@ class TestKokoroModelForward:
         vocab = model.vocab
         phonemes = list(vocab.keys())[:5]
         phoneme_str = "".join(phonemes)
-        audio = model.forward(phoneme_str, ref_s)
+        audio, pred_dur = model.forward(phoneme_str, ref_s)
         mx.eval(audio)
         assert audio.ndim == 1
         assert audio.shape[0] > 0
+
+    def test_forward_returns_durations(self, model):
+        ref_s = mx.random.normal((1, 256))
+        vocab = model.vocab
+        phonemes = "".join(list(vocab.keys())[:5])
+        audio, pred_dur = model.forward(phonemes, ref_s)
+        # pred_dur has T elements including BOS/EOS pads
+        assert pred_dur.ndim == 1
+        assert len(pred_dur) >= 2  # at minimum BOS + EOS
 
     def test_forward_no_nan(self, model):
         ref_s = mx.zeros((1, 256))
         vocab = model.vocab
         phonemes = "".join(list(vocab.keys())[:3])
-        audio = model.forward(phonemes, ref_s)
+        audio, pred_dur = model.forward(phonemes, ref_s)
         mx.eval(audio)
         arr = np.array(audio.tolist())
         assert not np.any(np.isnan(arr))
@@ -346,7 +355,7 @@ class TestKokoroModelForward:
         ref_s = vm.get_style(voice, 5)
         vocab = model.vocab
         phonemes = "".join(list(vocab.keys())[:5])
-        audio = model.forward(phonemes, ref_s)
+        audio, pred_dur = model.forward(phonemes, ref_s)
         mx.eval(audio)
         assert audio.ndim == 1
         assert audio.shape[0] > 100

@@ -445,7 +445,9 @@ class KokoroModel(nn.Module):
             speed: Speaking rate multiplier (lower = slower).
 
         Returns:
-            1D audio array.
+            Tuple of (audio, pred_dur_np) where audio is a 1D array and
+            pred_dur_np is an int32 numpy array of per-token frame durations
+            (includes BOS/EOS padding tokens at index 0 and -1).
         """
         if ref_s.ndim == 1:
             ref_s = ref_s[None, :]  # (1, 256)
@@ -507,4 +509,4 @@ class KokoroModel(nn.Module):
 
         # --- Decode ---
         audio = self.decoder(asr, F0_pred, N_pred, s_decoder)  # (1, 1, samples)
-        return audio.squeeze()  # 1D
+        return audio.squeeze(), pred_dur_np  # 1D audio + per-token frame durations

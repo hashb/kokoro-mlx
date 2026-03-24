@@ -13,7 +13,7 @@ from typing import Iterator
 import numpy as np
 
 from .config import KokoroConfig
-from .generate import SAMPLE_RATE, generate, generate_stream
+from .generate import SAMPLE_RATE, TokenTiming, generate, generate_stream
 from .model import KokoroModel
 from .phonemize import Phonemizer
 from .playback import play, play_stream, save_wav
@@ -28,6 +28,7 @@ class TTSResult:
     sample_rate: int
     duration: float
     voice: str
+    tokens: list[TokenTiming]
 
 
 class KokoroTTS:
@@ -105,7 +106,7 @@ class KokoroTTS:
             sample_rate: Output sample rate (24000 or 48000).
         """
         with self._lock:
-            audio = generate(
+            audio, tokens = generate(
                 text=text,
                 model=self._model,
                 config=self._config,
@@ -117,7 +118,7 @@ class KokoroTTS:
             )
 
         duration = len(audio) / sample_rate
-        return TTSResult(audio=audio, sample_rate=sample_rate, duration=duration, voice=voice)
+        return TTSResult(audio=audio, sample_rate=sample_rate, duration=duration, voice=voice, tokens=tokens)
 
     def generate_stream(
         self, text: str, voice: str = DEFAULT_VOICE, speed: float = 1.0, sample_rate: int = SAMPLE_RATE,
@@ -132,8 +133,13 @@ class KokoroTTS:
             voice: Voice name (see :meth:`list_voices`).
             speed: Speaking rate multiplier.
             sample_rate: Output sample rate (24000 or 48000).
+
+        Yields:
+            Float32 numpy arrays, one per sentence chunk.  For per-chunk token
+            timings use the lower-level :func:`kokoro_mlx.generate.generate_stream`
+            which yields ``(chunk, tokens)`` tuples.
         """
-        yield from generate_stream(
+        for chunk, _timings in generate_stream(
             text=text,
             model=self._model,
             config=self._config,
@@ -142,7 +148,8 @@ class KokoroTTS:
             speed=speed,
             phonemizer=self._phonemizer,
             sample_rate=sample_rate,
-        )
+        ):
+            yield chunk
 
     def speak(
         self,

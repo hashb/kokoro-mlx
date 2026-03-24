@@ -39,6 +39,7 @@ Model weights download automatically from HuggingFace Hub on first use.
 - **48 kHz output** from native 24 kHz via FFT upsampling, matching the sample rate modern audio hardware expects
 - **Mixed-precision vocoder**, bf16 through the network, float32 for the final waveform reconstruction
 - **Gapless streaming** over a single persistent audio stream with no inter-chunk silence
+- **Phoneme-level timestamps** with per-token start/end times returned alongside every audio result
 - **54 voices** across American English, British English, and additional languages
 - **WAV export** with a single method call
 - **Thread-safe** with internal lock for concurrent callers
@@ -120,11 +121,35 @@ with KokoroTTS.from_pretrained() as tts:
 ```python
 @dataclass
 class TTSResult:
-    audio: np.ndarray   # float32
-    sample_rate: int    # 24000 or 48000
-    duration: float     # seconds
-    voice: str          # voice name used
+    audio: np.ndarray         # float32
+    sample_rate: int          # 24000 or 48000
+    duration: float           # seconds
+    voice: str                # voice name used
+    tokens: list[TokenTiming] # per-phoneme timestamps
 ```
+
+### `TokenTiming`
+
+Per-phoneme timing information returned inside every `TTSResult`.
+
+```python
+@dataclass
+class TokenTiming:
+    token: str    # phoneme character
+    start: float  # start time in seconds
+    end: float    # end time in seconds
+```
+
+```python
+result = tts.generate("Hello, world.")
+for t in result.tokens:
+    print(f"{t.token}  {t.start:.3f}s – {t.end:.3f}s")
+# H  0.000s – 0.025s
+# ə  0.025s – 0.050s
+# ...
+```
+
+Timestamps are always at native 24 kHz resolution (12.5 ms per acoustic frame) regardless of the `sample_rate` parameter. For streaming, per-chunk timings are available from the lower-level `kokoro_mlx.generate.generate_stream()` which yields `(chunk, tokens)` tuples.
 
 ---
 
@@ -191,7 +216,7 @@ ISTFTNet Vocoder (80-bin mel → waveform) [float32]
 Optional 2x FFT upsample (24 kHz → 48 kHz)
   │
   ▼
-TTSResult { audio float32, duration, voice }
+TTSResult { audio float32, duration, voice, tokens [TokenTiming] }
 ```
 
 The network runs in bf16 for throughput. At the vocoder output, the signal is promoted to float32 for waveform reconstruction: magnitude recovery, phase extraction, inverse DFT, and overlap-add synthesis. This keeps inference fast while preserving the precision the iSTFT path needs.

@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from kokoro_mlx import KokoroTTS, TTSResult
+from kokoro_mlx import KokoroTTS, TTSResult, TokenTiming
 
 _MODEL_PATH = Path.home() / ".cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16/snapshots/a71e4d38b236d968966a2002c4c895dbd12b1c3c"
 
@@ -48,6 +48,17 @@ class TestKokoroTTS:
         assert result.sample_rate == 24000
         assert result.duration > 0.0
         assert result.voice == "af_heart"
+        assert isinstance(result.tokens, list)
+        assert len(result.tokens) > 0
+        assert all(isinstance(t, TokenTiming) for t in result.tokens)
+
+    def test_tokens_ordered_and_positive(self, tts):
+        result = tts.generate("Hello world.")
+        for t in result.tokens:
+            assert t.start >= 0.0
+            assert t.end > t.start
+        for i in range(1, len(result.tokens)):
+            assert result.tokens[i].start >= result.tokens[i - 1].end - 1e-9
 
     def test_duration_matches_audio_length(self, tts):
         result = tts.generate("Duration check.")

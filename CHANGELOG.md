@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Phoneme-level timestamps: `TTSResult` now includes a `tokens: list[TokenTiming]` field with per-phoneme `start`/`end` times in seconds. Timestamps are derived from the duration predictor's frame counts at native 24 kHz resolution (12.5 ms per acoustic frame).
+- `TokenTiming` dataclass (`token`, `start`, `end`) exported from the top-level package.
+- `kokoro_mlx.generate.generate_stream()` now yields `(chunk, tokens)` tuples so streaming callers can access per-chunk timings.
+
 ## [0.1.0] - 2026-02-28
 
 ### Added
